@@ -1,0 +1,28 @@
+# 场景示例：远程命令流程（绑定 host 会话运行）
+# 前置：已有 equipment 会话在监听，本 host 会话已与其建立通信
+scenario:
+  name: "remote-command-flow"
+  description: "主机订阅 ProcessStarted → 发送 START 远程命令 → 设备行为引擎改变状态并上报事件 → 校验 SV"
+  steps:
+    - action: subscribe
+      ceid: 6003
+      rptid: 7002
+      svids: [2001, 2002, 1003]
+    - action: remote_command
+      rcmd: START
+      params: { RECIPE: "R-DEMO-001" }
+      expect_hcack: 0
+    - action: wait_event
+      event: collection_event
+      timeout: 5
+      where: { ceid: 6003 }
+    - action: query_sv
+      svids: [1002, 2001]
+      expect: { 1002: RUNNING, 2001: R-DEMO-001 }
+    - action: remote_command
+      rcmd: STOP
+      params: {}
+      expect_hcack: 0
+    - action: query_sv
+      svids: [1002]
+      expect: { 1002: IDLE }

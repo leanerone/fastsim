@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FastSim - SECS/GEM 模拟测试平台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">⚡ FastSim <span class="sub">SECS/GEM 模拟与测试平台</span></div>
+  <div id="global-status" class="status-dot"></div>
+</header>
+
+<nav id="tabs">
+  <button data-tab="dashboard" class="active">仪表盘</button>
+  <button data-tab="session">会话详情</button>
+  <button data-tab="scenario">场景中心</button>
+  <button data-tab="profiles">机台 Profile</button>
+</nav>
+
+<main>
+  <!-- ==================== 仪表盘 ==================== -->
+  <section id="tab-dashboard" class="tab active">
+    <div class="toolbar">
+      <button id="btn-refresh" class="primary">刷新</button>
+      <button id="btn-new-session" class="primary">+ 新建会话</button>
+    </div>
+    <div id="session-cards" class="cards"></div>
+
+    <div id="dialog-new" class="dialog hidden">
+      <div class="dialog-box">
+        <h3>新建会话</h3>
+        <label>机台 Profile <select id="dlg-profile"></select></label>
+        <label>角色 <select id="dlg-role"><option value="equipment">设备端 (Equipment)</option><option value="host">主机端 (Host)</option></select></label>
+        <label>名称 <input id="dlg-name" placeholder="如 EQ-ETCH-01"></label>
+        <label>端口覆盖 <input id="dlg-port" type="number" placeholder="默认取 profile"></label>
+        <div class="dialog-actions">
+          <button id="dlg-cancel">取消</button>
+          <button id="dlg-create" class="primary">创建</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 会话详情 ==================== -->
+  <section id="tab-session" class="tab">
+    <div class="row">
+      <select id="sel-session"></select>
+      <span id="sess-states" class="states"></span>
+    </div>
+    <div class="subtabs">
+      <button data-sub="conn" class="active">连接</button>
+      <button data-sub="msgs">消息收发</button>
+      <button data-sub="logs">实时日志</button>
+      <button data-sub="gem">GEM 面板</button>
+      <button data-sub="rec">录制回放</button>
+    </div>
+
+    <div id="sub-conn" class="subtab active">
+      <div class="panel">
+        <h4>HSMS 控制</h4>
+        <div class="toolbar">
+          <button id="btn-connect" class="primary">Connect</button>
+          <button id="btn-disconnect">Disconnect</button>
+          <button id="btn-linktest">Linktest</button>
+          <button id="btn-select">Select</button>
+        </div>
+        <table id="tbl-conn" class="kv"></table>
+      </div>
+    </div>
+
+    <div id="sub-msgs" class="subtab">
+      <div class="panel">
+        <h4>SML 消息发送</h4>
+        <textarea id="sml-input" rows="8" placeholder="S1F13 W
+<L [2]
+  <A "FASTSIM">
+  <A "1.0.0">
+>"></textarea>
+        <div class="toolbar">
+          <button id="btn-send-sml" class="primary">发送 (W-bit 自动等待应答)</button>
+          <span id="sml-result" class="mono"></span>
+        </div>
+        <h4>标准消息库</h4>
+        <div id="msg-lib" class="chips"></div>
+      </div>
+    </div>
+
+    <div id="sub-logs" class="subtab">
+      <div class="toolbar">
+        <select id="log-filter-dir"><option value="">全部方向</option><option value="in">← 收到</option><option value="out">→ 发出</option></select>
+        <input id="log-filter-sf" placeholder="SxFy 过滤，如 S6F11">
+        <button id="btn-clear-logs">清屏</button>
+        <span id="ws-status" class="muted"></span>
+      </div>
+      <div id="log-view" class="logview"></div>
+    </div>
+
+    <div id="sub-gem" class="subtab">
+      <div class="panel-row">
+        <div class="panel">
+          <h4>报警 (ALID)</h4>
+          <div id="alarm-panel"></div>
+        </div>
+        <div class="panel">
+          <h4>事件 (CEID)</h4>
+          <div id="event-panel"></div>
+        </div>
+      </div>
+      <div class="panel-row">
+        <div class="panel">
+          <h4>变量 (SVID/DV/EC)</h4>
+          <div id="var-panel"></div>
+        </div>
+        <div class="panel">
+          <h4>控制状态 & 远程命令</h4>
+          <div id="ctrl-panel"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="sub-rec" class="subtab">
+      <div class="panel">
+        <h4>录制 / 回放</h4>
+        <div class="toolbar">
+          <button id="btn-rec-start" class="primary">开始录制</button>
+          <button id="btn-rec-stop">停止录制</button>
+          <button id="btn-replay">回放最近录制</button>
+        </div>
+        <pre id="rec-result" class="mono"></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 场景中心 ==================== -->
+  <section id="tab-scenario" class="tab">
+    <div class="row">
+      <select id="sel-scenario"></select>
+      <select id="sel-scenario-session"></select>
+      <button id="btn-run-scenario" class="primary">运行场景</button>
+    </div>
+    <pre id="scenario-report" class="mono report"></pre>
+  </section>
+
+  <!-- ==================== Profile ==================== -->
+  <section id="tab-profiles" class="tab">
+    <div class="panel">
+      <h4>机台 Profile（YAML，Pydantic 校验）</h4>
+      <textarea id="profile-text" rows="20" spellcheck="false"></textarea>
+      <div class="toolbar">
+        <button id="btn-profile-validate" class="primary">校验</button>
+        <span id="profile-result"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

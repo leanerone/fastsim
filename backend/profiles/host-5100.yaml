@@ -1,0 +1,136 @@
+profile:
+  name: Host 模拟器（连接 5100 端口设备）
+  vendor: ACME
+  model: ETCH-300
+  location: FAB1-A12
+  mdln: ETCH300
+  softrev: 2.1.0
+connection:
+  mode: ACTIVE
+  port: 5100
+  device_id: 0
+  initial_control_state: ONLINE_REMOTE
+  timeouts:
+    t3: 45
+    t5: 10
+    t6: 5
+    t7: 10
+    t8: 5
+    linktest: 30
+status_variables:
+  1001:
+    name: CHAMBER_PRESSURE
+    type: F4
+    unit: Torr
+    min: 0
+    max: 100
+  1002:
+    name: PROCESS_STATE
+    type: A
+    enum:
+    - IDLE
+    - RUNNING
+    - PAUSED
+    initial: IDLE
+  1003:
+    name: WAFER_COUNT
+    type: U4
+    initial: 0
+data_variables:
+  2001:
+    name: LAST_RECIPE
+    type: A
+    initial: '-'
+  2002:
+    name: LOT_ID
+    type: A
+    initial: '-'
+equipment_constants:
+  3001:
+    name: ESTABLISH_COMMUNICATIONS_TIMEOUT
+    type: U4
+    min: 10
+    max: 120
+    default: 60
+  3002:
+    name: PRESSURE_TARGET
+    type: F4
+    min: 0
+    max: 50
+    default: 1.2
+alarms:
+  5001:
+    name: DOOR_INTERLOCK
+    text: Chamber door opened during process
+    category: 1
+    ceid_on: 6001
+    ceid_off: 6002
+  5002:
+    name: PRESSURE_HIGH
+    text: Chamber pressure exceeds limit
+    category: 2
+    ceid_on: 6004
+collection_events:
+  6001:
+    name: AlarmOccurred
+    reports:
+    - 7001
+  6002:
+    name: AlarmCleared
+    reports:
+    - 7001
+  6003:
+    name: ProcessStarted
+    reports:
+    - 7002
+  6004:
+    name: PressureAlarm
+    reports:
+    - 7001
+  6005:
+    name: ProcessCompleted
+    reports:
+    - 7002
+reports:
+  7001:
+    variables:
+    - 1001
+    - 1002
+    - 1003
+  7002:
+    variables:
+    - 2001
+    - 2002
+    - 1003
+remote_commands:
+  START:
+    description: Start process
+    params:
+      RECIPE:
+        type: A
+        required: true
+    ceid: 6003
+  STOP:
+    description: Stop process
+    params: {}
+  PAUSE:
+    description: Pause process
+    params: {}
+behavior:
+  auto_reply_s1f13: true
+  online_mode: ONLINE_REMOTE
+  on_remote_command:
+    START:
+      set:
+        1002: RUNNING
+        2001: '@RECIPE'
+      trigger_ceid: 6003
+      hcack: 0
+    STOP:
+      set:
+        1002: IDLE
+      hcack: 0
+    PAUSE:
+      set:
+        1002: PAUSED
+      hcack: 0

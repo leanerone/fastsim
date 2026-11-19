@@ -1,0 +1,9 @@
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.6
+PyYAML>=6.0
+httpx>=0.27
+websockets>=12
+pytest>=8
+# 可选引擎（EngineAdapter 备选实现，LGPL-2.1+，独立安装即合规）
+# secsgem>=0.3.0

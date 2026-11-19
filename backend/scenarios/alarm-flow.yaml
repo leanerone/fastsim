@@ -1,0 +1,17 @@
+# 场景示例：报警流程（绑定设备会话运行）
+# 说明：本场景只需设备会话即可运行；若同时有 host 会话连接，
+#       host 端将收到 S5F1 报警与关联的 S6F11 事件（ceid_on=6001 / ceid_off=6002）。
+scenario:
+  name: "alarm-flow"
+  description: "设备触发 DOOR_INTERLOCK 报警(开/关) → 自动关联 AlarmOccurred/AlarmCleared 事件上报"
+  steps:
+    - action: set_alarm
+      alid: 5001
+      on: true
+    - action: sleep
+      seconds: 0.5
+    - action: set_alarm
+      alid: 5001
+      on: false
+    - action: sleep
+      seconds: 0.5
