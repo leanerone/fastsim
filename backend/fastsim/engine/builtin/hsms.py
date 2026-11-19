@@ -359,7 +359,8 @@ class HsmsProtocol:
                         wait_reply: bool = True) -> Optional[HsmsMessage]:
         """Send a data message. If wbit, wait for the reply (T3) and return it.
 
-        Raises T3Timeout when no reply, ConnectionLost on link drop.
+        Raises T3Timeout when no reply (per SEMI E30 a S9F9 is then sent to
+        the peer carrying the original message header), ConnectionLost on link drop.
         """
         if self.state != HsmsState.SELECTED:
             raise ConnectionLost(f"cannot send in state {self.state.value}")
@@ -379,7 +380,19 @@ class HsmsProtocol:
             return await asyncio.wait_for(fut, timeout=self.config.t3)
         except asyncio.TimeoutError:
             self._txns.pop(sysb, None)
+            await self._send_s9f9(msg)
             raise T3Timeout(f"T3 timeout waiting reply for {msg.sf} sys={sysb:#x}")
+
+    async def _send_s9f9(self, primary: HsmsMessage) -> None:
+        """E30: notify peer of transaction timeout with original header."""
+        try:
+            b2 = (0x80 if primary.wbit else 0) | primary.stream
+            head = primary.session_id.to_bytes(2, "big") + bytes(
+                [b2, primary.function, 0, 0]) + primary.system_bytes.to_bytes(4, "big")
+            body = Item.L([Item.from_value("B", list(head)), Item.from_value("A", "")])
+            await self.send_data(9, 9, body, wbit=False)
+        except Exception:
+            pass  # best effort; link may be down already
 
     async def reply_data(self, primary: HsmsMessage, stream: int, function: int,
                          body: Optional[Item] = None) -> None:
@@ -413,8 +426,10 @@ class HsmsProtocol:
         try:
             while True:
                 assert self._reader is not None
-                head = await asyncio.wait_for(self._reader.readexactly(4),
-                                              timeout=self.config.t8 if self.state == HsmsState.SELECTED else None)
+                # SEMI E37: T8 is the INTERCHARACTER timeout inside a frame.
+                # Inter-frame silence is legitimate (e.g. T3 > T8 waiting for a
+                # slow reply); idle-link deadness is covered by Linktest+T6.
+                head = await self._reader.readexactly(4)
                 length = struct.unpack(">I", head)[0]
                 if length < 10 or length > 16 * 1024 * 1024:
                     raise HsmsError(f"invalid frame length {length}")

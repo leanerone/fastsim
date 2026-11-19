@@ -156,17 +156,34 @@ $('#btn-select').onclick = () => api(`/sessions/${currentSession}/send`, { metho
 
 /* ---------------- msg lib & SML sender ---------------- */
 const MSG_LIB = [
-  ['S1F1 W', 'Are You There'], ['S1F13 W', '建立通信'],
-  ['S1F15 W', '请求离线'], ['S1F17 W', '请求在线'],
-  ['S2F33 W', '定义报告'], ['S2F35 W', '链接事件'], ['S2F37 W', '使能事件'],
-  ['S5F3 W', '报警使能'], ['S5F5 W', '查询报警'], ['S7F5 W', 'PP下载'],
-  ['S7F19 W', 'PP列表'], ['S9F5 W', '未知功能'],
+  { sml: 'S1F1 W', desc: 'Are You There', body: '' },
+  { sml: 'S1F2 W', desc: '在线数据', body: '<L [2]\n  <A "ETCH300">\n  <A "2.1.0">>' },
+  { sml: 'S1F3 W', desc: '查询 SV', body: '<L [1]\n  <U4 1002>>' },
+  { sml: 'S1F13 W', desc: '建立通信', body: '<L [2]\n  <A "FASTSIM">\n  <A "1.0.0">>' },
+  { sml: 'S1F15 W', desc: '请求离线', body: '' },
+  { sml: 'S1F17 W', desc: '请求在线', body: '' },
+  { sml: 'S2F13 W', desc: '读 EC', body: '<L [1]\n  <U4 3002>>' },
+  { sml: 'S2F15 W', desc: '写 EC', body: '<L [1]\n  <L [2]\n    <U4 3002>\n    <F4 2.5>>>' },
+  { sml: 'S2F17 W', desc: '读时钟', body: '' },
+  { sml: 'S2F31 W', desc: '设时钟', body: '<A "260101120000">' },
+  { sml: 'S2F33 W', desc: '定义报告', body: '<L [2]\n  <U4 0>\n  <L [1]\n    <L [2]\n      <U4 7001>\n      <L [3]\n        <U4 1001>\n        <U4 1002>\n        <U4 1003>>>>>' },
+  { sml: 'S2F35 W', desc: '链接事件', body: '<L [2]\n  <U4 0>\n  <L [1]\n    <L [2]\n      <U4 6001>\n      <L [1]\n        <L [2]\n          <U4 7001>\n          <L []>>>>>>' },
+  { sml: 'S2F37 W', desc: '使能事件', body: '<L [3]\n  <U4 0>\n  <BOOLEAN TRUE>\n  <L [1]\n    <U4 6001>>>' },
+  { sml: 'S2F41 W', desc: '远程命令', body: '<L [2]\n  <A "START">\n  <L [1]\n    <L [2]\n      <A "RECIPE">\n      <A "R-1">>>>' },
+  { sml: 'S5F3 W', desc: '报警使能', body: '<L [2]\n  <B 0x80>\n  <U4 5001>>' },
+  { sml: 'S5F5 W', desc: '查询已设报警', body: '<L [0]>' },
+  { sml: 'S5F7 W', desc: '查询已使能报警', body: '<L [0]>' },
+  { sml: 'S6F15 W', desc: '请求事件报告', body: '<L [2]\n  <U4 0>\n  <U4 6001>>' },
+  { sml: 'S7F5 W', desc: 'PP 下载请求', body: '<L [1]\n  <A "RECIPE-X">>' },
+  { sml: 'S7F19 W', desc: 'PP 列表', body: '' },
+  { sml: 'S9F1 W', desc: '未知 DeviceID', body: '<L [2]\n  <B 0x00 0x01 0x81 0x01 0x00 0x00>\n  <A "">>' },
 ];
 function loadMsgLib() {
-  $('#msg-lib').innerHTML = MSG_LIB.map(([sf, desc]) =>
-    `<span class="chip" data-sml="${sf}">${sf} · ${desc}</span>`).join('');
+  $('#msg-lib').innerHTML = MSG_LIB.map(m =>
+    `<span class="chip" data-sml="${m.sml}" data-body="${m.body.replace(/"/g, '&quot;').replace(/\n/g, '&#10;')}">${m.sml} · ${m.desc}</span>`).join('');
   $$('#msg-lib .chip').forEach(ch => ch.onclick = () => {
-    $('#sml-input').value = ch.dataset.sml;
+    const body = ch.dataset.body.replace(/&#10;/g, '\n');
+    $('#sml-input').value = body ? ch.dataset.sml + '\n' + body : ch.dataset.sml;
   });
 }
 

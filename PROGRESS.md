@@ -6,7 +6,7 @@
 
 - **技术路线**：Python 3.11 + 自研 asyncio 内置引擎（EngineAdapter 可换 secsgem）+ FastAPI + 原生 JS 前端 + MCP Server
 - **开发文档**：`../FastSim开发方案与技术路线.md`
-- **最后更新**：2026-11-20 00:20（MVP 核心完成，全量测试通过中）
+- **最后更新**：2026-11-20 01:05（迭代#1 完成，77/77 测试通过）
 
 ## 已完成
 
@@ -34,15 +34,24 @@
 
 ## 待办（按优先级）
 
-1. [ ] 全量测试回归通过（进行中）
-2. [ ] PROGRESS/README/docs 完成
-3. [ ] 启动脚本 run.bat / run.sh + requirements.txt
+1. [x] 全量测试回归通过（77/77）
+2. [x] PROGRESS/README/docs 完成
+3. [x] 启动脚本 run.bat / run.sh + requirements.txt
 4. [ ] secsgem 适配器（EngineAdapter 第二实现）+ 与 secsgem 对端互操作测试
-5. [ ] S9F3/F7/F9 更完整、S2F49、S6F23 trace 骨架
-6. [ ] 前端细节：消息库点击自动填充参数模板
+5. [~] S9 系列完整化 ✅（S9F1 device-id 校验 / S9F3 未知流 / S9F5 / S9F7 / S9F9 T3 超时上报）；S2F49、S6F23 trace 骨架待做
+6. [x] 前端细节：消息库点击自动填充参数模板（21 个标准消息带 body 模板）
 7. [ ] PyInstaller 打包脚本（单机版）
 8. [ ] Docker 部署文件（网站版）
 9. [ ] VB→Python 迁移指南文档
+
+## 迭代记录
+
+### 迭代 #1（2026-11-20 01:05）
+- 🔴 **修复重大协议 bug：T8 超时误杀长应答连接**。原实现把 T8 用作"整帧头读取超时"，导致 T3(45s) > T8(5s) 的正常慢应答场景必然断链（真实 MES 对接必踩）。按 SEMI E37 语义修正：T8 仅作帧内字符间隔超时，帧间空闲由 Linktest+T6 保活探测。
+- ✅ S9 系列完整化：S9F1（device_id 不匹配）、S9F3（未知流，S9F5 只用于已知流的未知功能）、S9F9（T3 超时后主动上报对端，携带原始报文头）
+- ✅ run.sh（Linux/Git Bash 启动脚本）
+- ✅ 前端消息库 21 条标准消息点击自动填充完整 SML 模板（含 body）
+- 测试：74 → 77（新增 S9F1/S9F3/S9F9 三个回环用例）
 
 ## 已知问题
 

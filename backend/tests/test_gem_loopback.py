@@ -136,7 +136,8 @@ def test_unknown_function_s9f5(gem_pair, event_loop):
     eq, host = gem_pair
 
     async def run():
-        rsp = await host.session.send(11, 1, Item.L([]), wbit=True)
+        # S1 is a known stream; S1F99 is an unknown function -> S9F5
+        rsp = await host.session.send(1, 99, Item.L([]), wbit=True)
         assert rsp is not None and rsp.function == 5  # S9F5 Unknown Function
 
     event_loop.run_until_complete(run())
@@ -219,5 +220,61 @@ def test_trigger_event_requires_enabled(gem_pair, event_loop):
         ceids = [e["payload"].get("ceid") for e in events
                  if e["type"] == "collection_event"]
         assert 6005 in ceids
+
+    event_loop.run_until_complete(run())
+
+
+def test_s9f1_wrong_device_id(gem_pair, event_loop):
+    """Data message with mismatched device id must be answered with S9F1."""
+    eq, host = gem_pair
+
+    async def run():
+        from fastsim.engine.builtin.secs2 import Item
+        rsp = await host.session.send(1, 1, Item.L([]), wbit=True,
+                                      system_bytes=host.session.protocol.new_system_bytes(),
+                                      )
+        # send again with wrong session id: craft raw via protocol with different device id
+        old_id = host.session.protocol.config.device_id
+        host.session.protocol.config.device_id = (old_id + 7) % 32000
+        try:
+            rsp2 = await host.session.send(1, 1, Item.L([]), wbit=True)
+        finally:
+            host.session.protocol.config.device_id = old_id
+        assert rsp2 is not None and rsp2.function == 1  # S9F1
+
+    event_loop.run_until_complete(run())
+
+
+def test_s9f3_unknown_stream(gem_pair, event_loop):
+    """Unknown stream (S99) must be answered with S9F3, not S9F5."""
+    eq, host = gem_pair
+
+    async def run():
+        from fastsim.engine.builtin.secs2 import Item
+        rsp = await host.session.send(99, 1, Item.L([]), wbit=True)
+        assert rsp is not None and rsp.function == 3  # S9F3
+
+    event_loop.run_until_complete(run())
+
+
+def test_s9f9_on_t3_timeout(gem_pair, event_loop):
+    """When host sends S1F1 W and equipment never replies, host sends S9F9;
+    equipment (as peer) receives it and records the s9_error event."""
+    eq, host = gem_pair
+    events = _capture_events(eq, [])
+
+    async def run():
+        # replace S1F1 handler with a silent one: received but never replies -> T3
+        async def _silent(msg, body):
+            return None  # no reply sent
+        saved = eq.session._handlers["S1F1"]
+        eq.session._handlers["S1F1"] = _silent
+        eq.session.protocol.config.t3 = 1.5
+        with pytest.raises(Exception):
+            await host.session.send(1, 1, None, wbit=True)
+        eq.session._handlers["S1F1"] = saved
+        await asyncio.sleep(0.5)
+        s9 = [e["payload"] for e in events if e["type"] == "s9_error"]
+        assert s9 and s9[0]["sf"] == "S9F9" and s9[0]["stream"] == 1, events
 
     event_loop.run_until_complete(run())

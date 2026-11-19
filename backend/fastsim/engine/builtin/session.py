@@ -208,6 +208,7 @@ class GemSession:
             "S7F1": self._h_s7f1, "S7F3": self._h_s7f3, "S7F5": self._h_s7f5,
             "S7F17": self._h_s7f17, "S7F19": self._h_s7f19,
             "S10F3": self._h_s10f3, "S10F5": self._h_s10f5,
+            "S9F9": self._h_s9f9,
         }
         host = {
             "S1F13": self._h_s1f13_from_equipment,
@@ -216,16 +217,28 @@ class GemSession:
             "S6F11": self._h_s6f11,
             "S10F1": self._h_s10f1,
             "S7F6": self._h_s7f6_host,
+            "S9F9": self._h_s9f9,
         }
         self._handlers = eq if self.role == "equipment" else host
 
+    KNOWN_STREAMS = {0, 1, 2, 5, 6, 7, 9, 10}
+
     async def _on_data(self, msg: HsmsMessage) -> None:
         sf = msg.sf
+        # device-id mismatch -> S9F1 (Unrecognized Device ID)
+        if msg.session_id != self.protocol.config.device_id:
+            await self._send_s9x(msg, 1)
+            await self.emit("s9_error", {"sf": "S9F1", "reason": "unrecognized device id",
+                                         "got": msg.session_id})
+            return
         handler = self._handlers.get(sf)
         if handler is None:
-            # unknown function
             if msg.wbit:
-                await self._send_s9f5(msg)
+                # unknown stream -> S9F3; known stream unknown function -> S9F5
+                if msg.stream not in self.KNOWN_STREAMS:
+                    await self._send_s9x(msg, 3)
+                else:
+                    await self._send_s9x(msg, 5)
             await self.emit("unhandled", {"sf": sf})
             return
         try:
@@ -243,15 +256,29 @@ class GemSession:
             if msg.wbit:
                 await self.protocol.reply_data(msg, msg.stream, 0, None)
 
-    async def _send_s9f5(self, primary: HsmsMessage) -> None:
+    async def _send_s9x(self, primary: HsmsMessage, function: int) -> None:
+        """Send S9F1/F3/F5/F7 error reply carrying the original header."""
         head = _encode_header_bytes(primary)
         body = Item.L([Item.from_value("B", list(head)), Item.from_value("A", "")])
-        await self.protocol.reply_data(primary, 9, 5, body)
+        await self.protocol.reply_data(primary, 9, function, body)
+
+    async def _send_s9f5(self, primary: HsmsMessage) -> None:
+        await self._send_s9x(primary, 5)
 
     async def _send_s9f7(self, primary: HsmsMessage) -> None:
-        head = _encode_header_bytes(primary)
-        body = Item.L([Item.from_value("B", list(head)), Item.from_value("A", "")])
-        await self.protocol.reply_data(primary, 9, 7, body)
+        await self._send_s9x(primary, 7)
+
+    async def _h_s9f9(self, msg: HsmsMessage, body: Optional[Item]) -> None:
+        """Peer reports a T3 transaction timeout (S9F9 carries original header)."""
+        info = {}
+        if body is not None and len(body.value) >= 1 and body[0].kind == "B":
+            head = bytes(body[0].value)
+            if len(head) >= 10:
+                info = {"session_id": int.from_bytes(head[0:2], "big"),
+                        "stream": head[2] & 0x7F, "function": head[3],
+                        "system_bytes": int.from_bytes(head[6:10], "big")}
+        await self.emit("s9_error", {"sf": "S9F9", "reason": "transaction timeout at peer",
+                                     **info})
 
     @staticmethod
     def _decode_rsp(rsp: Optional[HsmsMessage]) -> Optional[Item]:
