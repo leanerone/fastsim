@@ -1,0 +1,95 @@
+/* FastSim design tokens — "cleanroom instrument" system */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #070a0e;
+  --bg-grid: rgba(120, 160, 190, 0.045);
+  --surface: #0d131a;
+  --surface-2: #121a23;
+  --surface-3: #18222d;
+  --surface-hover: #1b2632;
+  --line: #1f2b38;
+  --line-strong: #2c3b4b;
+
+  --text: #e7eef6;
+  --text-soft: #b9c6d4;
+  --muted: #8194a8;
+  --faint: #5b6c7e;
+
+  --accent: #4ee0c1;
+  --accent-strong: #2cc9a8;
+  --accent-ink: #04211c;
+  --accent-soft: rgba(78, 224, 193, 0.12);
+  --accent-line: rgba(78, 224, 193, 0.32);
+
+  --info: #6fb2ff;
+  --info-soft: rgba(111, 178, 255, 0.13);
+  --warn: #f3b65c;
+  --warn-soft: rgba(243, 182, 92, 0.13);
+  --danger: #ff7580;
+  --danger-soft: rgba(255, 117, 128, 0.13);
+  --ok: #5be08c;
+  --ok-soft: rgba(91, 224, 140, 0.12);
+  --violet: #b69cff;
+
+  --shadow-lg: 0 24px 70px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.32);
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+
+  --radius-xl: 18px;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 7px;
+
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas,
+    "Liberation Mono", monospace;
+
+  --sidebar-w: 236px;
+  --topbar-h: 64px;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #eef2f5;
+  --bg-grid: rgba(20, 60, 80, 0.05);
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eceff3;
+  --surface-hover: #f0f4f7;
+  --line: #dde4ea;
+  --line-strong: #c6d1dc;
+
+  --text: #0d1a23;
+  --text-soft: #334a5c;
+  --muted: #5f7385;
+  --faint: #8496a6;
+
+  --accent: #0a9c81;
+  --accent-strong: #07856e;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(10, 156, 129, 0.1);
+  --accent-line: rgba(10, 156, 129, 0.28);
+
+  --info: #1f6feb;
+  --info-soft: rgba(31, 111, 235, 0.1);
+  --warn: #b06a00;
+  --warn-soft: rgba(176, 106, 0, 0.1);
+  --danger: #d42c3c;
+  --danger-soft: rgba(212, 44, 60, 0.08);
+  --ok: #12864a;
+  --ok-soft: rgba(18, 134, 74, 0.1);
+  --violet: #6a4fd0;
+
+  --shadow-lg: 0 24px 60px rgba(16, 40, 60, 0.18);
+  --shadow-md: 0 10px 28px rgba(16, 40, 60, 0.1);
+  --shadow-sm: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+[data-density="compact"] {
+  --topbar-h: 56px;
+}

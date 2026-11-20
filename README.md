@@ -33,6 +33,7 @@ python -m fastsim.app --host 127.0.0.1 --port 8000
 - **双端模拟**：设备端（Passive，供 MES 连入）/ 主机端（Active，连真实机台），一实例多会话
 - **SECS/GEM 内核**：HSMS-SS（T3-T8/Linktest/事务匹配）、SECS-II 全 14 类型、SML 解析/格式化（兼容 WinSECS 方言）、E30 设备端处理器全集（S1/S2/S5/S6/S7/S9/S10）
 - **行为引擎**：机台 Profile（YAML）声明 SVID/DV/EC/ALID/CEID/RPTID/远程命令与联动行为——零代码即可让机台"像真的"（命令→状态变化→事件上报）
+- **可视化工作台**：运行总览（链路/报警/报文 KPI + 会话卡片）、五标签会话工作台、GEM 数据字典面板、双主题与响应式布局
 - **消息收发**：SML 文本直发（W 位自动等应答）、标准消息库、实时 SML 着色日志
 - **场景自动化**：YAML 步骤 DSL + 断言 + 跨会话编排，替代 VB 脚本，可进 Git
 - **录制回放**：抓取会话帧存 JSONL，回放与黄金文件比对回归
@@ -70,7 +71,7 @@ scenario:
 
 ```bash
 cd fastsim/backend
-python -m pytest tests/ -q        # 60+ 用例：引擎/SML/GEM 回环/场景/录制/API/WS/MCP
+python -m pytest tests/ -q        # 78 用例：引擎/SML/GEM 回环/场景/录制/API/WS/MCP
 python -m fastsim.mcp_server --selftest
 ```
 
@@ -87,7 +88,7 @@ fastsim/
 │  ├─ profiles/            # 机台 Profile（Git 管理）
 │  ├─ scenarios/           # 场景库
 │  └─ tests/               # pytest 套件
-├─ frontend/               # 无构建原生 JS UI
+├─ frontend/               # 无构建原生 ES Module UI（css/tokens.css 设计变量）
 └─ PROGRESS.md             # 迭代进度
 ```
 

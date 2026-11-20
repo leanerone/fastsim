@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import pathlib
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -32,6 +34,38 @@ async def health() -> dict:
             "sessions": len(get_manager().sessions)}
 
 
+@router.get("/overview")
+async def overview() -> dict:
+    """Aggregated data for the dashboard (one request instead of N+1)."""
+    m = get_manager()
+    now = time.time()
+    sessions: List[dict] = []
+    recent: List[dict] = []
+    totals = {"sessions": 0, "connected": 0, "communicating": 0,
+              "alarms_active": 0, "messages": 0, "messages_last_minute": 0}
+    for w in m.sessions.values():
+        d = w.to_dict()
+        logs = list(w.logs)
+        active = [str(k) for k, v in getattr(w.session, "alarms_set", {}).items() if v]
+        last_minute = sum(1 for item in logs if now - item.get("ts", 0) <= 60)
+        d.update({"message_count": len(logs), "messages_last_minute": last_minute,
+                  "alarms_active": active})
+        sessions.append(d)
+        totals["sessions"] += 1
+        totals["messages"] += len(logs)
+        totals["messages_last_minute"] += last_minute
+        totals["alarms_active"] += len(active)
+        if d["states"].get("hsms") == "SELECTED":
+            totals["connected"] += 1
+        if d["states"].get("communication") == "COMMUNICATING":
+            totals["communicating"] += 1
+        for item in logs[-5:]:
+            recent.append({**item, "session_name": w.name})
+    recent.sort(key=lambda x: x.get("ts", 0), reverse=True)
+    return {"version": "0.1.0", "time": now, "totals": totals,
+            "sessions": sessions, "recent": recent[:12]}
+
+
 # ---------------------------------------------------------------- profiles
 @router.get("/profiles")
 async def list_profiles() -> List[str]:
@@ -44,6 +78,15 @@ async def get_profile(name: str) -> dict:
         return get_manager().load_profile(name)
     except FileNotFoundError as e:
         raise _err(e, 404)
+
+
+@router.get("/profiles/{name}/text")
+async def get_profile_text(name: str) -> dict:
+    """Raw YAML source so the web editor round-trips what is on disk."""
+    path = pathlib.Path(get_manager().loader.profiles_dir) / name
+    if not path.exists():
+        raise _err(f"profile not found: {name}", 404)
+    return {"name": name, "text": path.read_text(encoding="utf-8")}
 
 
 @router.post("/profiles/validate")
@@ -76,6 +119,7 @@ async def create_session(body: dict) -> dict:
             host=body.get("host"),
             port=body.get("port"),
             session_id=body.get("session_id"),
+            mode=body.get("mode"),
         )
     except (ValueError, FileNotFoundError) as e:
         raise _err(e)
@@ -143,9 +187,10 @@ async def send_sml(session_id: str, body: dict) -> dict:
 @router.get("/sessions/{session_id}/logs")
 async def get_logs(session_id: str, direction: Optional[str] = None,
                    sf: Optional[str] = None, text: Optional[str] = None,
+                   kind: Optional[str] = None,
                    tail: int = Query(default=200, le=5000)) -> List[dict]:
     try:
-        return get_manager().get_logs(session_id, direction, sf, text, tail)
+        return get_manager().get_logs(session_id, direction, sf, text, kind, tail)
     except KeyError as e:
         raise _err(e, 404)
 
@@ -256,9 +301,19 @@ async def terminal(session_id: str, body: dict) -> dict:
 # ---------------------------------------------------------------- scenarios
 @router.get("/scenarios")
 async def list_scenarios() -> List[str]:
-    import pathlib
     d = pathlib.Path(get_manager().scenarios_dir)
     return sorted(p.name for p in d.glob("*.yaml")) if d.exists() else []
+
+
+@router.get("/scenarios/{name}/text")
+async def get_scenario_text(name: str) -> dict:
+    d = pathlib.Path(get_manager().scenarios_dir)
+    path = d / name
+    if not path.exists() and not name.endswith(".yaml"):
+        path = d / f"{name}.yaml"
+    if not path.exists():
+        raise _err(f"scenario not found: {name}", 404)
+    return {"name": path.name, "text": path.read_text(encoding="utf-8")}
 
 
 @router.post("/sessions/{session_id}/scenario/{name}/run")

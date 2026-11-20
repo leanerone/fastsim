@@ -87,6 +87,8 @@ class SessionWrapper:
             "states": self.states(),
             "profile_meta": self.profile.get("profile", {}),
             "connection": conn,
+            "alarms_active": [str(k) for k, v in self.session.alarms_set.items() if v],
+            "message_count": len(self.logs),
             "created_at": self.created_at,
         }
 
@@ -131,12 +133,17 @@ class SessionManager:
                              name: Optional[str] = None,
                              host: Optional[str] = None,
                              port: Optional[int] = None,
-                             session_id: Optional[str] = None) -> dict:
+                             session_id: Optional[str] = None,
+                             mode: Optional[str] = None) -> dict:
         profile = self.loader.load(profile_name)
         role = (role or ("host" if profile["connection"]["mode"] == "ACTIVE"
                          else "equipment")).lower()
         if role not in ("equipment", "host"):
             raise ValueError("role must be equipment or host")
+        mode = str(mode or ("ACTIVE" if role == "host" else "PASSIVE")).upper()
+        if mode not in ("ACTIVE", "PASSIVE"):
+            raise ValueError("mode must be ACTIVE or PASSIVE")
+        profile["connection"]["mode"] = mode
         if session_id is None:
             base = name or profile.get("profile", {}).get("model") or profile_name
             session_id = f"{base}-{uuid.uuid4().hex[:6]}"
@@ -281,7 +288,7 @@ class SessionManager:
     # ---------------- logs ----------------
     def get_logs(self, session_id: str, direction: Optional[str] = None,
                  sf: Optional[str] = None, text: Optional[str] = None,
-                 tail: int = 200) -> List[dict]:
+                 kind: Optional[str] = None, tail: int = 200) -> List[dict]:
         w = self.get(session_id)
         logs = list(w.logs)
         if direction:
@@ -292,6 +299,8 @@ class SessionManager:
         if text:
             logs = [l for l in logs
                     if text.lower() in json_dumps_safe(l)]
+        if kind:
+            logs = [l for l in logs if l.get("kind") == kind]
         return logs[-tail:]
 
     async def wait_for_event(self, session_id: str, event_type: str,

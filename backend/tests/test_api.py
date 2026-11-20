@@ -41,6 +41,88 @@ def test_health_and_profiles(client, event_loop):
     event_loop.run_until_complete(run())
 
 
+def test_overview_and_source_endpoints(client, event_loop):
+    async def run():
+        r = await client.get("/api/v1/overview")
+        assert r.status_code == 200
+        body = r.json()
+        assert {"sessions", "connected", "communicating", "messages"} <= set(body["totals"])
+        assert body["sessions"] == []
+
+        r = await client.get("/api/v1/profiles/etcher-001.yaml/text")
+        assert r.status_code == 200 and "profile:" in r.json()["text"]
+
+        r = await client.get("/api/v1/scenarios")
+        names = r.json()
+        assert names
+        r = await client.get(f"/api/v1/scenarios/{names[0]}/text")
+        assert r.status_code == 200 and "steps" in r.json()["text"]
+
+        r = await client.get("/api/v1/profiles/missing.yaml/text")
+        assert r.status_code == 404
+    event_loop.run_until_complete(run())
+
+
+def test_role_derives_transport_mode_for_builtin_pair(client, event_loop):
+    port = free_port()
+
+    async def run():
+        r = await client.post("/api/v1/sessions", json={
+            "profile": "etcher-001.yaml", "role": "equipment",
+            "port": port, "session_id": "PAIR-EQ"})
+        assert r.status_code == 200, r.text
+        assert r.json()["connection"]["mode"] == "PASSIVE"
+
+        r = await client.post("/api/v1/sessions", json={
+            "profile": "etcher-001.yaml", "role": "host",
+            "port": port, "session_id": "PAIR-HOST"})
+        assert r.status_code == 200, r.text
+        assert r.json()["connection"]["mode"] == "ACTIVE"
+
+        deadline = asyncio.get_event_loop().time() + 8
+        state = {}
+        while asyncio.get_event_loop().time() < deadline:
+            r = await client.get("/api/v1/sessions/PAIR-HOST/state")
+            state = r.json()
+            if state.get("communication") == "COMMUNICATING":
+                break
+            await asyncio.sleep(0.15)
+        assert state.get("communication") == "COMMUNICATING", state
+
+        await client.delete("/api/v1/sessions/PAIR-HOST")
+        await client.delete("/api/v1/sessions/PAIR-EQ")
+
+    event_loop.run_until_complete(run())
+
+
+def test_log_kind_filter_applies_before_tail(client, app, event_loop):
+    session_id = "LOG-FILTER"
+
+    async def run():
+        r = await client.post("/api/v1/sessions", json={
+            "profile": "etcher-001.yaml", "role": "equipment",
+            "port": free_port(), "session_id": session_id})
+        assert r.status_code == 200, r.text
+        wrapper = app.state.manager.get(session_id)
+        wrapper.logs.extend([
+            {"ts": 1, "kind": "data", "dir": "in", "sf": "S1F1"},
+            {"ts": 2, "kind": "control", "dir": "in", "desc": "Linktest.req"},
+            {"ts": 3, "kind": "control", "dir": "out", "desc": "Linktest.rsp"},
+        ])
+
+        r = await client.get(f"/api/v1/sessions/{session_id}/logs",
+                             params={"kind": "data", "tail": 1})
+        assert r.status_code == 200
+        assert [item["sf"] for item in r.json()] == ["S1F1"]
+
+        r = await client.get(f"/api/v1/sessions/{session_id}/logs",
+                             params={"kind": "control", "tail": 1})
+        assert [item["desc"] for item in r.json()] == ["Linktest.rsp"]
+        await client.delete(f"/api/v1/sessions/{session_id}")
+
+    event_loop.run_until_complete(run())
+
+
 def test_full_session_lifecycle(client, event_loop):
     port = free_port()
     host_profile = _make_host_profile(port)

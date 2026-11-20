@@ -6,7 +6,7 @@
 
 - **技术路线**：Python 3.11 + 自研 asyncio 内置引擎（EngineAdapter 可换 secsgem）+ FastAPI + 原生 JS 前端 + MCP Server
 - **开发文档**：`../FastSim开发方案与技术路线.md`
-- **最后更新**：2026-11-20 01:05（迭代#1 完成，77/77 测试通过）
+- **最后更新**：2026-11-20 11:40（迭代#2 完成，78/78 测试通过）
 
 ## 已完成
 
@@ -22,11 +22,11 @@
 | SessionManager | ✅ | 多会话 + 事件总线 + 日志环形缓冲 |
 | REST API | ✅ | /api/v1 全套（sessions/logs/alarms/events/variables/scenario/record） |
 | WebSocket | ✅ | /ws/{id} 实时日志/状态/事件推送 |
-| 前端 MVP | ✅ | 仪表盘/会话详情/SML 收发/实时日志/GEM 面板/场景/Profile 编辑（无构建依赖） |
+| 前端工作台 | ✅ | 现代仪表盘/会话工作台/SML 收发/GEM 面板/场景报告/Profile 编辑器（原生 ES Module，双主题、响应式） |
 | MCP Server | ✅ | stdio JSON-RPC 2.0，21 tools + 2 prompts，`python -m fastsim.mcp_server` |
 | 场景运行器 | ✅ | YAML DSL + 断言 + 事件缓冲（防竞态）+ 跨会话步骤 |
 | 录制回放 | ✅ | JSONL 录制/回放/黄金文件比对 |
-| 测试 | ✅ | 6 个测试文件 60+ 用例（引擎/SML/GEM 回环/场景/录制/API/WS/MCP） |
+| 测试 | ✅ | 6 个测试文件 78 用例（引擎/SML/GEM 回环/场景/录制/API/WS/MCP） |
 
 ## 与文档的偏差记录
 
@@ -45,6 +45,13 @@
 9. [ ] VB→Python 迁移指南文档
 
 ## 迭代记录
+
+### 迭代 #2（2026-11-20 11:40）
+- 🎨 **前端整体重构为可交付工作台**：侧边导航 + 顶栏 + 运行总览（4 项 KPI、会话卡片、跨会话最近报文）、会话工作台五标签（实时日志 / 报文收发 / GEM / 连接参数 / 录制回放）、场景中心（步骤预览 + 结构化执行报告）、机台 Profile 双栏编辑器（原文 YAML 校验/保存）
+- 🧩 **前端架构拆分**：`frontend/js/` 按 api / ui / newsession / views 分模块，原生 ES Module 无构建；`tokens.css` + `app.css` 建立设计变量、深色/浅色主题与响应式断点
+- ⚙️ **后端补充聚合接口**：`GET /overview`（总量、活动报警、近一分钟报文、跨会话最近日志）、`GET /profiles/{name}/text`、`GET /scenarios/{name}/text`，避免前端 N+1 请求
+- 🐛 修复 `tests/` 缺少包初始化导致的用例收集失败；新增新接口回归用例
+- 测试：77 → 78
 
 ### 迭代 #1（2026-11-20 01:05）
 - 🔴 **修复重大协议 bug：T8 超时误杀长应答连接**。原实现把 T8 用作"整帧头读取超时"，导致 T3(45s) > T8(5s) 的正常慢应答场景必然断链（真实 MES 对接必踩）。按 SEMI E37 语义修正：T8 仅作帧内字符间隔超时，帧间空闲由 Linktest+T6 保活探测。
