@@ -1,12 +1,14 @@
 # FastSim 开发进度
 
 > 本文件由自动化迭代任务维护。每次迭代：读本文件 → 继续未完成任务 → 跑测试 → 更新本文件。
+> 面向 AI 开发者的详细指引见 `DEVELOPER.md`。
 
 ## 项目状态总览
 
-- **技术路线**：Python 3.11 + 自研 asyncio 内置引擎（EngineAdapter 可换 secsgem）+ FastAPI + 原生 JS 前端 + MCP Server
-- **开发文档**：`../FastSim开发方案与技术路线.md`
-- **最后更新**：2026-11-20 11:40（迭代#2 完成，78/78 测试通过）
+- **技术路线**：Python 3.11 + 自研 asyncio 内置引擎（EngineAdapter 可换 secsgem）+ FastAPI + 原生 JS 前端（无构建，ES Module + CSS 变量） + MCP Server
+- **开发文档**：`DEVELOPER.md`（架构/约定/API/测试），`README.md`（快速开始）
+- **最后更新**：2026-11-25（迭代#3 完成，80/80 测试通过）
+- **Git 分支**：仅 `main`，直接 push（`d9d5e95 → 300f358` → 见下文）
 
 ## 已完成
 
@@ -22,11 +24,11 @@
 | SessionManager | ✅ | 多会话 + 事件总线 + 日志环形缓冲 |
 | REST API | ✅ | /api/v1 全套（sessions/logs/alarms/events/variables/scenario/record） |
 | WebSocket | ✅ | /ws/{id} 实时日志/状态/事件推送 |
-| 前端工作台 | ✅ | 现代仪表盘/会话工作台/SML 收发/GEM 面板/场景报告/Profile 编辑器（原生 ES Module，双主题、响应式） |
+| 前端工作台 | ✅ | 任务导向首页（一键双端演示）/ 三场景向导 / 消息流重构（默认隐藏控制帧）/ 会话五标签 / 使用指南 / 原生 ES Module，双主题，960/760/480 响应式 |
 | MCP Server | ✅ | stdio JSON-RPC 2.0，21 tools + 2 prompts，`python -m fastsim.mcp_server` |
 | 场景运行器 | ✅ | YAML DSL + 断言 + 事件缓冲（防竞态）+ 跨会话步骤 |
 | 录制回放 | ✅ | JSONL 录制/回放/黄金文件比对 |
-| 测试 | ✅ | 6 个测试文件 78 用例（引擎/SML/GEM 回环/场景/录制/API/WS/MCP） |
+| 测试 | ✅ | 7 个测试文件 80 用例（引擎/SML/GEM 回环/场景/录制/API/WS/MCP，覆盖角色推导+日志分类过滤） |
 
 ## 与文档的偏差记录
 
@@ -34,8 +36,8 @@
 
 ## 待办（按优先级）
 
-1. [x] 全量测试回归通过（77/77）
-2. [x] PROGRESS/README/docs 完成
+1. [x] 全量测试回归通过（80/80）
+2. [x] PROGRESS/DEVELOPER/README 文档补齐
 3. [x] 启动脚本 run.bat / run.sh + requirements.txt
 4. [ ] secsgem 适配器（EngineAdapter 第二实现）+ 与 secsgem 对端互操作测试
 5. [~] S9 系列完整化 ✅（S9F1 device-id 校验 / S9F3 未知流 / S9F5 / S9F7 / S9F9 T3 超时上报）；S2F49、S6F23 trace 骨架待做
@@ -43,8 +45,18 @@
 7. [ ] PyInstaller 打包脚本（单机版）
 8. [ ] Docker 部署文件（网站版）
 9. [ ] VB→Python 迁移指南文档
+10. [ ] 移动端窄屏（<760px）真机验收：当前 CSS 断点已补齐但依赖浏览器自动化视口缩放，需桌面浏览器手动拖窄验证
 
 ## 迭代记录
+
+### 迭代 #3（2026-11-25）— 产品化重构，Git 提交 `300f358`
+- 🎯 **首页从仪表盘改为任务向导**：首屏"创建双端演示"主按钮，三步进度（创建 → 通信 → S1F1 验证），自动保存配对到 `localStorage["fastsim.pairs"]`
+- 🧭 **新建向导三场景**：`demo`（一次生成 `${name}-EQ` PASSIVE + `${name}-HOST` ACTIVE）/ `equipment`（PASSIVE 等 MES 连入）/ `host`（ACTIVE 连真实设备），向导自动推导 HSMS 模式，不需要用户懂 ACTIVE/PASSIVE
+- 🔧 **后端自动模式推导**：`SessionManager.create_session(role, mode=None)` 新增 `mode` 参数，`role="host"` → ACTIVE，其它 → PASSIVE；API 透传。修复了旧版"role=host 但仍按 Profile 被动监听"的经典坑
+- 📨 **消息流重构**：默认隐藏 `kind=="control"` 的 HSMS 控制帧与 Linktest（每 30s 两条心跳会淹没业务报文），保留"显示控制帧与心跳"开关；每条展示时间/方向/SxFy/中文含义/摘要，可展开原始 SML + SystemBytes；业务与控制帧分别保留（600/100），避免心跳挤出历史
+- 📚 **新增使用指南页**：`#/docs` — 双端演示三步、真实双向接入（MES 验证 / 连真实设备）、消息方向、控制帧、连接排查顺序、REST/WS/MCP 与启动命令
+- 🎨 **前端响应式收尾**：960/760/480px 三断点补齐，修正旧 `.feed-item` 三列覆盖新版五列的冲突；底部环形缓冲提示改为"业务 600 条 · 控制帧 100 条"
+- ✅ **新增回归用例**：`test_role_derives_transport_mode_for_builtin_pair`（同一 etcher-001.yaml 同时创建 PASSIVE 设备端和 ACTIVE 主机端，等待 COMMUNICATING）、`test_log_kind_filter_applies_before_tail`（日志分类过滤应先于 tail 截断）。测试 78 → 80
 
 ### 迭代 #2（2026-11-20 11:40）
 - 🎨 **前端整体重构为可交付工作台**：侧边导航 + 顶栏 + 运行总览（4 项 KPI、会话卡片、跨会话最近报文）、会话工作台五标签（实时日志 / 报文收发 / GEM / 连接参数 / 录制回放）、场景中心（步骤预览 + 结构化执行报告）、机台 Profile 双栏编辑器（原文 YAML 校验/保存）

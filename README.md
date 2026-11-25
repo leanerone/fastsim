@@ -11,6 +11,14 @@ REST/脚本 ──────────┘                                   
                                                                           （可换 secsgem/.NET 引擎）
 ```
 
+## 文档索引
+
+| 文档 | 谁该读 |
+|------|--------|
+| [PROGRESS.md](PROGRESS.md) | 迭代进度、里程碑、待办 |
+| [DEVELOPER.md](DEVELOPER.md) | **开发者必读**：架构/约定/API/测试/陷阱 |
+| 本文件 | 快速开始 |
+
 ## 快速开始
 
 ```bash
@@ -70,8 +78,8 @@ scenario:
 ## 测试
 
 ```bash
-cd fastsim/backend
-python -m pytest tests/ -q        # 78 用例：引擎/SML/GEM 回环/场景/录制/API/WS/MCP
+cd backend
+python -m pytest tests/ -q        # 80 用例：引擎/SML/GEM 回环/场景/录制/API/WS/MCP
 python -m fastsim.mcp_server --selftest
 ```
 
@@ -89,7 +97,9 @@ fastsim/
 │  ├─ scenarios/           # 场景库
 │  └─ tests/               # pytest 套件
 ├─ frontend/               # 无构建原生 ES Module UI（css/tokens.css 设计变量）
-└─ PROGRESS.md             # 迭代进度
+├─ DEVELOPER.md             # 开发者手册（架构/约定/API/测试）
+├─ PROGRESS.md              # 迭代进度
+└─ README.md
 ```
 
 ## 许可
