@@ -67,6 +67,8 @@ class SessionWrapper:
         self.logs: deque = deque(maxlen=MAX_LOG_PER_SESSION)
         self.created_at = time.time()
         self._record_task: Optional[asyncio.Task] = None
+        # newest connection problem (PORT_IN_USE, PEER_UNREACHABLE, ...) for the UI
+        self.issue: Optional[dict] = None
 
     def states(self) -> dict:
         return self.session.states()
@@ -89,6 +91,7 @@ class SessionWrapper:
             "connection": conn,
             "alarms_active": [str(k) for k, v in self.session.alarms_set.items() if v],
             "message_count": len(self.logs),
+            "issue": self.issue,
             "created_at": self.created_at,
         }
 
@@ -103,10 +106,16 @@ class SessionManager:
 
     # ---------------- emit pipeline ----------------
     async def _emit(self, session_id: str, event_type: str, payload: dict) -> None:
-        if event_type == "log":
-            w = self.sessions.get(session_id)
-            if w is not None:
+        w = self.sessions.get(session_id)
+        if w is not None:
+            if event_type == "log":
                 w.logs.append(payload)
+            elif event_type == "issue":
+                # severity "info" means the link recovered / is waiting normally
+                w.issue = None if payload.get("severity") == "info" else payload
+            elif (event_type == "state"
+                  and (payload.get("states") or {}).get("hsms") == "SELECTED"):
+                w.issue = None
         await self.bus.publish(session_id, event_type, payload)
 
     def _make_emit(self, session_id: str):
@@ -198,7 +207,7 @@ class SessionManager:
         w = self.get(session_id)
         if values:
             for vid, val in values.items():
-                self._set_var(w, vid, val)
+                await self._set_var(w, vid, val)
         sent = await w.session.trigger_collection_event(ceid)
         return {"sent": sent, "ceid": ceid}
 
@@ -209,25 +218,21 @@ class SessionManager:
             raise KeyError(f"unknown alarm {alid}")
         return {"alid": alid, "set": on}
 
-    def _set_var(self, w: SessionWrapper, vid: Any, val: Any) -> None:
-        s = w.session
+    async def _set_var(self, w: SessionWrapper, vid: Any, val: Any) -> None:
         # JSON/YAML ids arrive as strings; engine stores numeric ids as int
         try:
             vid = int(vid)
         except (TypeError, ValueError):
             pass
-        if vid in s.dv_defs:
-            s.dv_values[vid] = val
-        elif vid in s.sv_defs:
-            s.sv_values[vid] = val
-        elif vid in s.ec_defs:
-            s.ec_values[vid] = val
-        else:
+        changes: dict = {}
+        if not w.session._set_variable(vid, val, changes):
             raise KeyError(f"unknown variable id {vid}")
+        if changes:
+            await self._emit(w.id, "variables_changed", {"changes": changes, "source": "api"})
 
     async def set_variable(self, session_id: str, vid: Any, val: Any) -> dict:
         w = self.get(session_id)
-        self._set_var(w, vid, val)
+        await self._set_var(w, vid, val)
         return {"vid": vid, "value": val}
 
     def get_variables(self, session_id: str) -> dict:

@@ -146,8 +146,13 @@ function docsPage() {
   return `
     <div class="page-head"><div><div class="eyebrow">QUICK START & FIELD GUIDE</div><h1 class="page-title">第一次使用，从这里开始</h1><p class="page-sub">先在本机跑通双端消息，再替换为真实 MES / EAP 或真实机台。每一步都能看到明确的连接和响应结果。</p></div></div>
     <section class="guide-hero">
-      <div><span class="start-tag">约 3 步跑通</span><h2>本机双端演示</h2><p>系统自动创建 Passive 设备端与 Active 主机端，使用相同端口互连，不需要手动修改 YAML。</p><button class="btn primary" data-doc-demo>${icon('play', 14)}创建双端演示</button></div>
-      <ol class="guide-steps"><li><b>创建会话</b><span>选择机台 Profile 与端口，生成 EQ / HOST 两个会话。</span></li><li><b>确认通信</b><span>状态变为“通信中”，说明 HSMS Select 与 GEM 建链成功。</span></li><li><b>发送 S1F1</b><span>在主机端“发送消息”中发送，确认收到 S1F2。</span></li></ol>
+      <div><span class="start-tag">约 30 秒跑通</span><h2>本机双端演示</h2><p>一键创建 Passive 设备端与 Active 主机端：自动选择空闲端口、自动建立通信、自动发送 S1F1 验证，无需手动修改 YAML。</p><button class="btn primary" data-doc-demo>${icon('zap', 14)}一键创建双端演示</button></div>
+      <ol class="guide-steps"><li><b>一键创建</b><span>系统自动挑选空闲端口，生成 EQ / HOST 两个会话并互连。</span></li><li><b>自动通信</b><span>HSMS Select 与 GEM 建链自动完成，进度实时可见。</span></li><li><b>自动验证</b><span>自动发送 S1F1 并确认收到 S1F2，成功后即可进入工作台。</span></li></ol>
+    </section>
+
+    <div class="section-head"><div class="section-title">看见命令的效果</div><div class="section-sub">行为引擎：命令 → 状态变化 → 事件上报</div></div>
+    <section class="panel guide-log-help">
+      <div class="guide-legend" style="margin-top:0"><p>在<b>主机端</b>工作台的“GEM 操作”里发送 <b>START</b> 远程命令：系统会自动用 S1F3 重新查询设备状态，高亮显示变化（如 PROCESS_STATE: IDLE → RUNNING），并列出设备上报的事件。设备端的“实时动态”也会同步显示收到的命令与变量变化。</p></div>
     </section>
 
     <div class="section-head"><div class="section-title">接入真实系统时怎么选</div></div>
@@ -167,7 +172,7 @@ function docsPage() {
       <article><b>1. 地址与端口</b><p>双端演示两侧端口必须相同。真实连接使用对端实际 IP，不要把设备 IP 填成本机监听地址。</p></article>
       <article><b>2. 主动与被动</b><p>一端必须是 ACTIVE，另一端必须是 PASSIVE。新建向导已自动设置，无需手动改 Profile。</p></article>
       <article><b>3. 通信状态</b><p>先达到 SELECTED，再等待 COMMUNICATING。未通信时不要连续发送业务报文，先查看控制帧。</p></article>
-      <article><b>4. 防火墙与占用</b><p>Passive 端口被占用会导致创建失败；跨机器联调需放行对应 TCP 端口。</p></article>
+      <article><b>4. 防火墙与占用</b><p>端口被占用时，一键演示会自动换用空闲端口；手动创建会提示占用并提供“自动选择空闲端口”。跨机器联调需放行对应 TCP 端口。</p></article>
     </section>
 
     <details class="advanced-guide"><summary>开发者接入：REST / WebSocket / MCP 与启动命令</summary><div class="docs-grid">

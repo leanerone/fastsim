@@ -172,6 +172,16 @@ class GemSession:
             if self.role == "equipment" and self.communication_state == CommunicationState.NOT_COMMUNICATING:
                 self.communication_state = CommunicationState.WAIT_CRA
                 await self.emit("state", {"states": self.states()})
+            await self.emit("issue", {"code": "PEER_CONNECTED", "severity": "info",
+                                      "message": "对端已连接，正在完成 HSMS 握手…"})
+        elif event == "listening":
+            await self.emit("issue", {"code": "LISTENING", "severity": "info",
+                                      "message": f"已监听 {self.protocol.config.host}:{self.protocol.config.port}，等待主机连接…"})
+        elif event in ("listen_failed", "connect_retry", "connect_failed", "connection_rejected"):
+            # Connection problems used to stop here silently; surface them so the
+            # UI can tell the user what went wrong and how to fix it.
+            await self.emit("hsms_" + event, payload)
+            await self.emit("issue", describe_hsms_issue(event, payload, self.protocol.config, self.role))
         elif event in ("disconnected", "t7_timeout", "t8_timeout", "read_error",
                        "select_rejected", "separate", "rejected", "deselected"):
             if self.connected is False and self.communication_state == CommunicationState.COMMUNICATING:
@@ -179,6 +189,7 @@ class GemSession:
                 self.established = False
                 await self.emit("state", {"states": self.states()})
             await self.emit("hsms_" + event, payload)
+            await self.emit("issue", describe_hsms_issue(event, payload, self.protocol.config, self.role))
             if event in ("t7_timeout", "t8_timeout"):
                 await self.emit("error", {"message": f"{event.upper()} occurred", "detail": payload})
         elif event == "t3_timeout":
@@ -374,6 +385,7 @@ class GemSession:
 
     async def _h_s2f15(self, msg: HsmsMessage, body: Optional[Item]) -> None:
         eacs = []
+        changes: Dict[str, dict] = {}
         if body is not None:
             for pair in body.value:
                 ecid = _first_int(pair[0])
@@ -384,9 +396,11 @@ class GemSession:
                     continue
                 ok = _check_range(d, val)
                 if ok:
-                    self.ec_values[ecid] = val
+                    self._set_variable(ecid, val, changes)
                 eacs.append(0 if ok else 3)  # 3 = invalid value
         await self.emit("ec_updated", {"values": dict(self.ec_values)})
+        if changes:
+            await self.emit("variables_changed", {"changes": changes, "source": "s2f15"})
         # SEMI E30: S2F16 = L[n] {<EAC B>} per EC entry
         await self.protocol.reply_data(
             msg, 2, 16, Item.L([Item.from_value("B", e) for e in eacs]))
@@ -698,17 +712,13 @@ class GemSession:
             if pd and pd.get("required") and (val is None or val == ""):
                 return HCACK_INVALID_PARAMETER, [(name, HCACK_INVALID_PARAMETER)]
         ackc_list = [(n, 0) for n, _ in param_items]
+        changes: Dict[str, dict] = {}
         if behavior:
             for vid, val in (behavior.get("set") or {}).items():
                 # "@PARAM" syntax: take value from the remote command parameters
                 if isinstance(val, str) and val.startswith("@"):
                     val = params.get(val[1:])
-                if vid in self.dv_defs:
-                    self.dv_values[vid] = val
-                elif vid in self.sv_defs:
-                    self.sv_values[vid] = val
-                elif vid in self.ec_defs:
-                    self.ec_values[vid] = val
+                self._set_variable(vid, val, changes)
             for alid in behavior.get("alarm_on") or []:
                 await self.set_alarm(alid, True)
             for alid in behavior.get("alarm_off") or []:
@@ -719,7 +729,25 @@ class GemSession:
             hcack = int(behavior.get("hcack", HCACK_OK))
         else:
             hcack = HCACK_OK
+        if changes:
+            # lets the UI show "command -> state change" instead of a bare HCACK
+            await self.emit("variables_changed",
+                            {"changes": changes, "source": "remote_command", "rcmd": rcmd})
         return hcack, ackc_list
+
+    def _set_variable(self, vid: Any, val: Any, changes: Dict[str, dict]) -> bool:
+        """Write one SV/DV/EC value and record before/after when it changed."""
+        groups = (("DV", self.dv_defs, self.dv_values), ("SV", self.sv_defs, self.sv_values),
+                  ("EC", self.ec_defs, self.ec_values))
+        for group, defs, values in groups:
+            if vid in defs:
+                old = values.get(vid)
+                values[vid] = val
+                if old != val:
+                    changes[str(vid)] = {"from": old, "to": val, "group": group,
+                                         "name": str(defs[vid].get("name", ""))}
+                return True
+        return False
 
     async def switch_control_state(self, target: str) -> bool:
         if target not in CONTROL_STATES:
@@ -841,7 +869,10 @@ class GemSession:
         if rsp is not None:
             try:
                 item = Item.decode(rsp.body, 0) if rsp.body else Item.L([])
+                # "data" is the decoded tree (lists / scalars) so clients can
+                # explain the reply without parsing SML text
                 out["reply"] = {"sf": rsp.sf, "sml": item.to_sml(),
+                                "data": _item_to_py(item),
                                 "system_bytes": rsp.system_bytes}
             except Exception:
                 out["reply"] = {"sf": rsp.sf, "hex": rsp.body.hex()}
@@ -866,6 +897,73 @@ def _norm_keys(d: dict) -> dict:
         except (TypeError, ValueError):
             out[k] = v
     return out
+
+
+# --------------------------------------------------------------- link issues
+def _issue(code: str, severity: str, message: str, hint: str = "",
+           detail: Any = None) -> dict:
+    return {"code": code, "severity": severity, "message": message, "hint": hint,
+            "detail": detail, "ts": time.time()}
+
+
+def _is_port_in_use(error: str) -> bool:
+    """Bind errors differ per OS (WinError 10048 / errno 98 / errno 48)."""
+    text = str(error or "").lower()
+    return any(mark in text for mark in (
+        "10048", "errno 98", "errno 48", "address already in use",
+        "only one usage of each socket address", "只允许使用一次"))
+
+
+def describe_hsms_issue(event: str, payload: Any, cfg: Any, role: str) -> Optional[dict]:
+    """Turn an HSMS link event into a human-readable problem plus a fix hint.
+
+    Published as an ``issue`` event so connection problems are never silent
+    (e.g. a PASSIVE session whose port is already taken by another process).
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    endpoint = f"{cfg.host}:{cfg.port}"
+    error = str(payload.get("error") or payload.get("reason") or "")
+    peer_gone_hint = ("设备端已恢复监听，等待主机重新连接" if role == "equipment"
+                      else f"主机端会每隔 {cfg.t5:.0f} 秒自动重连；请检查对端是否重启或离线")
+    if event == "listen_failed":
+        if _is_port_in_use(error):
+            return _issue("PORT_IN_USE", "error",
+                          f"端口 {cfg.port} 已被占用，设备端无法开始监听",
+                          "关闭占用该端口的程序，或换一个空闲端口后重新创建会话", error)
+        return _issue("LISTEN_FAILED", "error", f"设备端无法监听 {endpoint}",
+                      "检查 IP 是否属于本机网卡、端口是否在允许范围内", error)
+    if event == "connect_retry":
+        return _issue("PEER_UNREACHABLE", "warn", f"正在连接 {endpoint}，对端暂未响应",
+                      "请确认对端已启动并在该端口监听；跨机器联调需放行防火墙", error)
+    if event == "connect_failed":
+        return _issue("CONNECT_FAILED", "error", f"多次连接 {endpoint} 失败，已停止自动重试",
+                      "检查对端 IP、端口与防火墙后，在工作台点击“重启链路”")
+    if event == "connection_rejected":
+        return _issue("PEER_BUSY", "error", "对端已有其它连接，本次连接被拒绝",
+                      "一个 HSMS-SS 设备端同一时间只接受一个主机连接，请先断开对端的旧连接")
+    if event == "t7_timeout":
+        return _issue("T7_TIMEOUT", "error",
+                      f"对端连接后在 {cfg.t7:.0f} 秒内没有发起 Select 握手",
+                      "确认对端是 HSMS-SS ACTIVE 主机，且中间没有防火墙拦截")
+    if event == "t8_timeout":
+        return _issue("T8_TIMEOUT", "warn", "报文接收中断（帧内字符间隔超过 T8）",
+                      "检查网络稳定性，链路会自动恢复")
+    if event == "read_error":
+        return _issue("LINK_ERROR", "warn", f"读取对端数据出错：{error or '连接异常'}",
+                      "链路已断开，将按 T5 间隔自动重连", error)
+    if event == "select_rejected":
+        return _issue("SELECT_REJECTED", "error", "对端拒绝了 Select 请求",
+                      "对端可能已与其它主机建立连接，或尚未就绪")
+    if event == "rejected":
+        return _issue("CONTROL_REJECTED", "warn", "对端拒绝了控制请求",
+                      "确认链路已完成 Select 后再发送控制帧")
+    if event == "separate":
+        return _issue("PEER_SEPARATE", "warn", "对端发送 Separate，链路已断开", peer_gone_hint)
+    if event == "deselected":
+        return _issue("PEER_DESELECT", "warn", "对端发送 Deselect，链路已取消选择", peer_gone_hint)
+    if event == "disconnected":
+        return _issue("PEER_DISCONNECTED", "warn", "对端已断开 TCP 连接", peer_gone_hint)
+    return None
 
 
 def _encode_header_bytes(msg: HsmsMessage) -> bytes:

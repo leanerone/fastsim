@@ -19,7 +19,7 @@ python -m fastsim.app --host 127.0.0.1 --port 8000    # 启动（含前端）
 
 # 跑全量测试
 cd backend
-python -m pytest tests/ -q   # 80/80 当前基线
+python -m pytest tests/ -q   # 87/87 当前基线
 
 # MCP 自检
 python -m fastsim.mcp_server --selftest
@@ -144,7 +144,10 @@ Profile 字段全集见 `core/profile.py` 的 Pydantic 模型。
 | GET  | `/api/v1/profiles/{name}/text` | Profile YAML 原文 |
 | PUT  | `/api/v1/profiles/{name}` | 保存 Profile |
 | GET  | `/api/v1/scenarios` / `/text` | 场景列表 / YAML 原文 |
+| GET  | `/api/v1/scenarios/manifest` | 场景结构化清单（role/描述/中文步骤摘要） |
 | POST | `/api/v1/scenarios/{name}/run` | 运行场景 |
+| GET  | `/api/v1/ports/free?host=&start=` | 首个空闲端口（一键演示自动选端口） |
+| GET  | `/api/v1/ports/check?host=&port=` | 端口是否可监听（PASSIVE 预检） |
 | POST | `/api/v1/record/{id}/start\|stop\|export` | 录制控制 |
 
 全部在 `api/routes.py`，不分散。
@@ -156,7 +159,15 @@ Profile 字段全集见 `core/profile.py` 的 Pydantic 模型。
 {"type":"state","state":"COMMUNICATING"}
 {"type":"event","ceid":...,"data":...}
 {"type":"alarm","alid":...,"status":"set"}
+{"type":"issue","code":"PORT_IN_USE","severity":"error","message":"...","hint":"..."}
+{"type":"variables_changed","changes":{"1002":{"from":"IDLE","to":"RUNNING","group":"SV","name":"PROCESS_STATE"}}}
+{"type":"collection_event","ceid":6003,"reports":{...}}
+{"type":"remote_command","rcmd":"START","hcack":0}
 ```
+
+- `issue`：连接问题（`severity` 为 `info` 表示恢复/正常等待，前端据此清除问题）。`SessionWrapper.issue` 保存最新一条，随 `to_dict()`/`/overview` 暴露，供轮询视图显示。
+- `variables_changed`：远程命令行为 / S2F15 / API 设值都会触发，前端据此实时刷新变量字典并高亮。
+- 发送类 REST 失败返回 `detail = {code, message, hint, raw}`（`core/errors.py` 翻译）；`send` 成功应答含 `reply.data`（解码后的列表/标量树），前端据此解读 HCACK/COMMACK/变量名，无需解析 SML。
 
 ---
 
@@ -273,6 +284,7 @@ python -m pytest tests/test_api.py -q -k role_derives
 | `test_scenario_recording.py` | 场景 DSL + 录制回放 |
 | `test_api.py` | REST + WS 全链路，含双端模式推导 + 日志分类过滤 |
 | `test_mcp.py` | MCP 21 tools |
+| `test_ux_backend.py` | 端口探测 / 连接问题上报 / 友好错误 / 应答 data + variables_changed / 场景清单 + 角色校验 |
 
 **写新测试的要点**：
 - 跨会话双端用 `asyncio.start_server` + `SessionManager.create_session(..., mode=...)` 组合，不要依赖真实端口冲突
@@ -290,6 +302,9 @@ python -m pytest tests/test_api.py -q -k role_derives
 | T8 超时误杀长应答 | T3=45s, T8=5s → 正常慢应答被断链 | T8 是帧内字符间隔，不是帧间超时（已修复，见迭代#1） |
 | Profile port 被误认为硬绑定 | 用户改 Profile port 但 create_session 传了不同端口 | `create_session` 的 port 参数优先，Profile 只作默认 |
 | 前端假会话残留 | 刷新后看到已不存在的会话 | 监听 WebSocket `state` 帧，delete 后清 localStorage |
+| 场景跑错角色 | 主机场景绑到设备端 → `hcack=None expect 0` | 场景 YAML 写 `role: host/equipment`，运行器返回 `ROLE_MISMATCH`，前端按角色过滤会话 |
+| YAML `on:` 键被吞 | `set_alarm` 的 `on: false` 不生效（PyYAML 把 `on` 解析成布尔键 `True`） | 用 `scenario._on_flag` 读取（兼容 `p["on"]` 与 `p[True]`），或给键加引号 |
+| 端口占用静默失败 | PASSIVE 会话创建成功但永远不通信 | 引擎转发 `issue` 事件（`PORT_IN_USE` 等），创建前用 `/ports/check` 预检 |
 
 ---
 
@@ -306,7 +321,7 @@ python -m pytest tests/test_api.py -q -k role_derives
 
 ## 9. 版本与提交
 
-当前基线：**80 测试通过**，最近提交 `300f358`（迭代#3，产品化重构）。分支仅 `main`，直接 push。
+当前基线：**87 测试通过**，最近提交 `300f358`（迭代#3，产品化重构）+ 迭代#4 易用性重构（工作区未提交）。分支仅 `main`，直接 push。
 
 Git 身份（已在仓库本地配置）：`leanerone <leanerone@users.noreply.github.com>`。如接手人使用不同账号，请执行：
 ```bash

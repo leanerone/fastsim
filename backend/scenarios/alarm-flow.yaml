@@ -3,6 +3,7 @@
 #       host 端将收到 S5F1 报警与关联的 S6F11 事件（ceid_on=6001 / ceid_off=6002）。
 scenario:
   name: "alarm-flow"
+  role: equipment            # 在设备端会话上运行
   description: "设备触发 DOOR_INTERLOCK 报警(开/关) → 自动关联 AlarmOccurred/AlarmCleared 事件上报"
   steps:
     - action: set_alarm

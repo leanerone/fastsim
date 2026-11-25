@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconn
 
 from ..core.scenario import ScenarioRunner
 from ..core.manager import SessionManager
+from ..core.errors import public_error
+from ..core.ports import find_free_port, port_is_free
 
 router = APIRouter(prefix="/api/v1")
 ws_router = APIRouter()
@@ -27,11 +29,32 @@ def _err(exc: Exception, code: int = 400) -> HTTPException:
     return HTTPException(status_code=code, detail=str(exc))
 
 
+def _fail(exc: Exception, code: int = 422) -> HTTPException:
+    """Actionable error body: {code, message, hint, raw} instead of a raw exception."""
+    return HTTPException(status_code=code, detail=public_error(exc))
+
+
 # ---------------------------------------------------------------- health
 @router.get("/health")
 async def health() -> dict:
     return {"status": "ok", "version": "0.1.0",
             "sessions": len(get_manager().sessions)}
+
+
+# ---------------------------------------------------------------- port probes
+@router.get("/ports/free")
+async def free_port(host: str = "127.0.0.1",
+                    start: int = Query(default=5000, ge=1, le=65535),
+                    count: int = Query(default=50, ge=1, le=500)) -> dict:
+    """First free port at or after `start`, used by the one-click demo wizard."""
+    return {"host": host, "port": find_free_port(host, start, count)}
+
+
+@router.get("/ports/check")
+async def check_port(host: str = "127.0.0.1",
+                     port: int = Query(ge=1, le=65535)) -> dict:
+    """Whether a PASSIVE session can bind host:port right now."""
+    return {"host": host, "port": port, "free": port_is_free(host, port)}
 
 
 @router.get("/overview")
@@ -41,25 +64,40 @@ async def overview() -> dict:
     now = time.time()
     sessions: List[dict] = []
     recent: List[dict] = []
-    totals = {"sessions": 0, "connected": 0, "communicating": 0,
-              "alarms_active": 0, "messages": 0, "messages_last_minute": 0}
+    totals = {"sessions": 0, "connected": 0, "communicating": 0, "verified": 0,
+              "alarms_active": 0, "messages": 0, "messages_last_minute": 0,
+              "data_messages": 0, "data_messages_last_minute": 0}
     for w in m.sessions.values():
         d = w.to_dict()
         logs = list(w.logs)
         active = [str(k) for k, v in getattr(w.session, "alarms_set", {}).items() if v]
         last_minute = sum(1 for item in logs if now - item.get("ts", 0) <= 60)
+        data_logs = [item for item in logs if item.get("kind") != "control"]
+        data_last_minute = sum(1 for item in data_logs if now - item.get("ts", 0) <= 60)
+        # "verified" = communicating AND a user W-primary (not the auto S1F13
+        # handshake) was sent, so the onboarding stepper reflects real exchanges
+        verified = (d["states"].get("communication") == "COMMUNICATING"
+                    and any(item.get("kind") == "data" and item.get("dir") == "out"
+                            and item.get("w") and item.get("sf") != "S1F13"
+                            for item in logs))
         d.update({"message_count": len(logs), "messages_last_minute": last_minute,
-                  "alarms_active": active})
+                  "data_messages": len(data_logs),
+                  "data_messages_last_minute": data_last_minute,
+                  "verified": verified, "alarms_active": active})
         sessions.append(d)
         totals["sessions"] += 1
         totals["messages"] += len(logs)
         totals["messages_last_minute"] += last_minute
+        totals["data_messages"] += len(data_logs)
+        totals["data_messages_last_minute"] += data_last_minute
         totals["alarms_active"] += len(active)
         if d["states"].get("hsms") == "SELECTED":
             totals["connected"] += 1
         if d["states"].get("communication") == "COMMUNICATING":
             totals["communicating"] += 1
-        for item in logs[-5:]:
+        if verified:
+            totals["verified"] += 1
+        for item in data_logs[-8:]:
             recent.append({**item, "session_name": w.name})
     recent.sort(key=lambda x: x.get("ts", 0), reverse=True)
     return {"version": "0.1.0", "time": now, "totals": totals,
@@ -181,7 +219,7 @@ async def send_sml(session_id: str, body: dict) -> dict:
     except KeyError as e:
         raise _err(e, 404)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.get("/sessions/{session_id}/logs")
@@ -253,7 +291,7 @@ async def remote_command(session_id: str, body: dict) -> dict:
     except KeyError as e:
         raise _err(e, 404)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.post("/sessions/{session_id}/subscribe")
@@ -263,7 +301,7 @@ async def subscribe(session_id: str, body: dict) -> dict:
             session_id, _num(body["ceid"]), _num(body["rptid"]),
             [_num(s) for s in body.get("svids", [])])
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.post("/sessions/{session_id}/query-sv")
@@ -271,7 +309,7 @@ async def query_sv(session_id: str, body: dict) -> dict:
     try:
         return await get_manager().query_sv(session_id, [_num(s) for s in body["svids"]])
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.post("/sessions/{session_id}/pp/upload")
@@ -279,7 +317,7 @@ async def pp_upload(session_id: str, body: dict) -> dict:
     try:
         return await get_manager().pp_upload(session_id, body["ppid"], body["body_b64"])
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.post("/sessions/{session_id}/pp/download")
@@ -287,7 +325,7 @@ async def pp_download(session_id: str, body: dict) -> dict:
     try:
         return await get_manager().pp_download(session_id, body["ppid"])
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.post("/sessions/{session_id}/terminal")
@@ -295,7 +333,7 @@ async def terminal(session_id: str, body: dict) -> dict:
     try:
         return await get_manager().terminal(session_id, body["text"], body.get("tid", 0))
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 # ---------------------------------------------------------------- scenarios
@@ -303,6 +341,13 @@ async def terminal(session_id: str, body: dict) -> dict:
 async def list_scenarios() -> List[str]:
     d = pathlib.Path(get_manager().scenarios_dir)
     return sorted(p.name for p in d.glob("*.yaml")) if d.exists() else []
+
+
+@router.get("/scenarios/manifest")
+async def scenarios_manifest() -> List[dict]:
+    """Structured scenario index (role, description, Chinese step summaries)."""
+    m = get_manager()
+    return ScenarioRunner(m).manifest(m.scenarios_dir)
 
 
 @router.get("/scenarios/{name}/text")
@@ -365,7 +410,7 @@ async def replay(session_id: str, body: dict) -> dict:
         return await replay_recording(get_manager(), session_id, body["recording"],
                                       speed=float(body.get("speed", 1.0)))
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 @router.post("/recordings/compare")
@@ -374,7 +419,7 @@ async def compare_recordings(body: dict) -> dict:
     try:
         return compare(body["a"], body["b"])
     except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise _fail(e)
 
 
 # ---------------------------------------------------------------- websocket

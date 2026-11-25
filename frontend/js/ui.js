@@ -93,13 +93,13 @@ export function fmtRelative(ts) {
 export const STATE_LABELS = {
   hsms: {
     NOT_CONNECTED: '未连接',
-    CONNECTED_NOT_SELECTED: '已连接 · 未选择',
-    SELECTED: '已选择',
+    CONNECTED_NOT_SELECTED: '已连接 · 等待握手',
+    SELECTED: '链路已建立',
   },
   communication: {
     DISABLED: '通信关闭',
     NOT_COMMUNICATING: '未建立通信',
-    WAIT_CRA: '等待 CRA',
+    WAIT_CRA: '等待建立通信',
     WAIT_DELAY: '等待延迟',
     COMMUNICATING: '通信中',
   },
@@ -111,6 +111,12 @@ export const STATE_LABELS = {
     ONLINE_REMOTE: '远程联机',
     ONLINE: '联机',
   },
+};
+
+const STATE_KIND_TITLES = {
+  hsms: 'HSMS 链路状态',
+  communication: 'GEM 通信状态',
+  control: 'GEM 控制状态',
 };
 
 export function stateTone(kind, value) {
@@ -142,10 +148,31 @@ export function statePills(states = {}) {
   ];
   return rows.map(([kind, value]) => {
     const tone = stateTone(kind, value);
-    return `<span class="pill ${tone === 'info' ? 'ok' : tone}" title="${esc(kind)}">
+    return `<span class="pill ${tone === 'info' ? 'ok' : tone}" title="${esc(STATE_KIND_TITLES[kind] || kind)}：${esc(value || '—')}">
       <span class="dot ${tone === 'idle' ? 'idle' : tone}"></span>${esc(stateLabel(kind, value))}
     </span>`;
   }).join('');
+}
+
+/** Turn any thrown error into a readable message + fix hint for the user. */
+export function explainError(err) {
+  if (err?.info?.message) {
+    return { message: err.info.message, hint: err.info.hint || '', code: err.info.code || '' };
+  }
+  if (err?.issue?.message) {
+    return { message: err.issue.message, hint: err.issue.hint || '', code: err.issue.code || '' };
+  }
+  const text = String(err?.message || err || '未知错误');
+  if (/failed to fetch|networkerror|load failed|fetch failed/i.test(text)) {
+    return { message: '无法连接后端服务', hint: '请确认 FastSim 后端已启动（run.bat / run.sh），然后刷新页面。', code: 'BACKEND_DOWN' };
+  }
+  return { message: text, hint: '', code: '' };
+}
+
+/** Toast an error with its hint as a second line. */
+export function toastError(err, timeout = 5200) {
+  const { message, hint } = explainError(err);
+  toast(message, 'err', timeout, hint);
 }
 
 const TOKEN_RE = /<([A-Z]\w*)|("(?:[^"\\]|\\.)*")|(\b\d+(?:\.\d+)?\b)|([<>\[\]])/g;
@@ -178,12 +205,12 @@ export function summarizeSml(log) {
   return body.length > 150 ? `${body.slice(0, 150)}…` : body;
 }
 
-export function toast(message, kind = 'ok', timeout = 3200) {
+export function toast(message, kind = 'ok', timeout = 3200, hint = '') {
   const stack = document.getElementById('toasts');
   if (!stack) return;
   const el = document.createElement('div');
   el.className = `toast ${kind}`;
-  el.innerHTML = `${icon(kind === 'err' ? 'alert' : kind === 'warn' ? 'info' : 'check', 14)}<span>${esc(message)}</span>`;
+  el.innerHTML = `${icon(kind === 'err' ? 'alert' : kind === 'warn' ? 'info' : 'check', 14)}<span>${esc(message)}${hint ? `<small class="toast-hint">${esc(hint)}</small>` : ''}</span>`;
   stack.appendChild(el);
   setTimeout(() => {
     el.style.transition = 'opacity .2s, transform .2s';

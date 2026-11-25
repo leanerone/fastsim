@@ -2,6 +2,7 @@
 # 前置：已有 equipment 会话在监听，本 host 会话已与其建立通信
 scenario:
   name: "remote-command-flow"
+  role: host                 # 在主机端会话上运行
   description: "主机订阅 ProcessStarted → 发送 START 远程命令 → 设备行为引擎改变状态并上报事件 → 校验 SV"
   steps:
     - action: subscribe
